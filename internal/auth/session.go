@@ -23,7 +23,7 @@ type Session struct {
 	State        SessionState
 	Permissions  []string
 	Metadata     map[string]string
-	mutex        sync.Mutex
+	mutex        sync.RWMutex
 }
 
 func NewSession(username, dn string, duration time.Duration) *Session {
@@ -46,8 +46,8 @@ func generateSession() string {
 }
 
 func (s *Session) IsValid() bool {
-	s.mutex.Lock()
-	defer s.mutex.Unlock()
+	s.mutex.RLock()
+	defer s.mutex.RUnlock()
 
 	return s.State == SessionStateActive && time.Now().Before(s.ExpiresAt)
 }
@@ -80,8 +80,8 @@ func (s *Session) AddPermission(permission string) {
 }
 
 func (s *Session) HasPermission(permission string) bool {
-	s.mutex.Lock()
-	defer s.mutex.Unlock()
+	s.mutex.RLock()
+	defer s.mutex.RUnlock()
 
 	for _, p := range s.Permissions {
 		if p == permission {
@@ -100,16 +100,16 @@ func (s *Session) SetMetadata(key, value string) {
 }
 
 func (s *Session) GetMetadata(key string) (string, bool) {
-	s.mutex.Lock()
-	defer s.mutex.Unlock()
+	s.mutex.RLock()
+	defer s.mutex.RUnlock()
 
 	meta, doesExist := s.Metadata[key]
 	return meta, doesExist
 }
 
 func (s *Session) GetState() SessionState {
-	s.mutex.Lock()
-	defer s.mutex.Unlock()
+	s.mutex.RLock()
+	defer s.mutex.RUnlock()
 
 	if time.Now().After(s.ExpiresAt) {
 		return SessionStateExpired
