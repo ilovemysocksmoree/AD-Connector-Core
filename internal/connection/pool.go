@@ -1,7 +1,7 @@
 package connection
 
 import (
-	"context"
+	"fmt"
 	"sync"
 	"time"
 
@@ -16,16 +16,6 @@ const (
 	ConnectionStateClosed
 )
 
-type PooledConnection struct {
-	conn       *ldap.Conn
-	state      ConnectionState
-	boundDN    string
-	boundCreds string
-	lastUsed   time.Time
-	createdAt  time.Time
-	isBound    bool
-}
-
 type ConnectionPool struct {
 	config      *ConnConfig
 	connections []*PooledConnection
@@ -39,7 +29,107 @@ func NewConnectionPool(config *ConnConfig) *ConnectionPool {
 	}
 }
 
-func (p *ConnectionPool) createNewConnection(ctx context.Context) (*PooledConnection, error) {
+// creates a new connection to pool or get a conn from pool
+func (p *ConnectionPool) Get() (*PooledConnection, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 
-	return nil, nil
+	for _, connection := range p.connections {
+		if connection.state == ConnectionStateIdle {
+			// checking if connection is still valid
+			if time.Since(connection.lastUsed) > p.config.IdleTimeout {
+				fmt.Println("connection expired, closing and removing")
+				_ = connection.conn.Close()
+				connection.state = ConnectionStateClosed
+				continue
+			}
+
+			// connection is good
+
+			connection.state = ConnectionStateInUse
+			connection.lastUsed = time.Now()
+
+			fmt.Println("Reusing existing connection from pool")
+			return connection, nil
+		}
+	}
+
+	// no idle connection, so creating new one
+	if len(p.connections) < p.config.MaxConnection {
+		fmt.Println("creating new connection")
+		conn, err := p.createNewConnection()
+		if err != nil {
+			return nil, err
+		}
+
+		p.connections = append(p.connections, conn)
+		return conn, nil
+	}
+
+	fmt.Println("Connection pool exhausted")
+	return nil, fmt.Errorf("connection pool exhausted")
+}
+
+func (p *ConnectionPool) Release(conn *PooledConnection) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	if conn.state == ConnectionStateInUse {
+		conn.state = ConnectionStateIdle
+		conn.lastUsed = time.Now()
+		fmt.Printf("Connection name: %s released to pool \n", conn.boundDN)
+	}
+}
+
+func (p *ConnectionPool) Close() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	for _, connection := range p.connections {
+		if connection.state != ConnectionStateClosed {
+			fmt.Println("Closing connection")
+			_ = connection.conn.Close()
+			connection.state = ConnectionStateClosed
+		}
+	}
+
+	p.connections = nil
+}
+
+func (p *ConnectionPool) createNewConnection() (*PooledConnection, error) {
+	var conn *ldap.Conn
+	var err error
+
+	for retry := 0; retry <= p.config.MaxRetries; retry++ {
+		if retry > 0 {
+			fmt.Printf("Retry connection attempt (%d/%d) \n", retry, p.config.MaxRetries)
+			time.Sleep(p.config.RetryInterval)
+		}
+
+		if p.config.UseSSL {
+			fmt.Println("ssl dial implementation incoming")
+		} else {
+			conn, err = ldap.DialURL(p.config.ServerAddr)
+		}
+
+		if err == nil {
+			break
+		}
+
+		fmt.Printf("Connection attempt[%d] failed: %v, ", retry, err)
+	}
+
+	if err != nil {
+
+	}
+
+	conn.SetTimeout(p.config.OperationTimeout)
+
+	return &PooledConnection{
+		conn:      conn,
+		state:     ConnectionStateInUse,
+		isBound:   false,
+		createdAt: time.Now(),
+		lastUsed:  time.Now(),
+	}, nil
 }
