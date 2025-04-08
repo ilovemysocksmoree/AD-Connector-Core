@@ -313,18 +313,70 @@ func (a *Authenticator) Close() {
 func (a *Authenticator) GetStats() map[string]interface{} {
 	stats := make(map[string]interface{})
 
+	stats["active_session"] = a.sm.GetActiveSession()
 	a.mu.RLock()
-	// stats[]
+	stats["cache_entries"] = len(a.cache)
 	defer a.mu.RUnlock()
+
 	return stats
 }
-func (a *Authenticator) ClearCache()                                  {}
-func (a *Authenticator) GetSession(sessionID string) (*Session, bool) { return nil, false }
-func (a *Authenticator) GetUser(username, bindUser, bindPassword string) (*types.UserInfo, error) {
-	return a.GetUserInfo("", "", "")
+func (a *Authenticator) ClearCache() {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	a.cache = make(map[cacheKey]cacheEntry)
+	fmt.Println("Authentication cache has been cleared")
 }
+
+func (a *Authenticator) GetSession(sessionID string) (*Session, bool) {
+	return a.sm.GetSession(sessionID)
+}
+
+func (a *Authenticator) GetUser(username, bindUser, bindPassword string) (*types.UserInfo, error) {
+	return a.GetUserInfo(username, bindUser, bindPassword)
+}
+
 func (a *Authenticator) SearchUsers(filter, bindUser, bindPassword string) ([]*types.UserInfo, error) {
-	return nil, nil
+	fmt.Println("searching users for authentcated")
+
+	if !strings.HasPrefix(filter, "(&") {
+		filter = fmt.Sprintf("(&(objectClass=name)(objectCategory=person)%s)", filter)
+	}
+
+	searchReq := ldap.NewSearchRequest(
+		a.authCfg.BaseDN,
+		ldap.ScopeWholeSubtree, ldap.NeverDerefAliases, 0, 0, false,
+		filter,
+		a.authCfg.UserAttributes,
+		nil,
+	)
+
+	searchResp, err := a.connManager.Search(bindUser, bindPassword, searchReq)
+	if err != nil {
+		return nil, fmt.Errorf("search request: %v", err)
+	}
+
+	var users []*types.UserInfo
+	for _, resp := range searchResp.Entries {
+		user := &types.UserInfo{
+			DN:          resp.DN,
+			Username:    resp.GetAttributeValue("sAMAccountName"),
+			DisplayName: resp.GetAttributeValue("displayName"),
+			Email:       resp.GetAttributeValue("mail"),
+			UPN:         resp.GetAttributeValue("userPrincipalName"),
+			Groups:      resp.GetAttributeValues("memberOf"),
+			Attributes:  make(map[string][]string),
+		}
+
+		for _, attr := range resp.Attributes {
+			user.Attributes[attr.Name] = attr.Values
+		}
+
+		users = append(users, user)
+	}
+
+	fmt.Printf("Total user found for given filter: %d \n", len(users))
+	return users, nil
 }
 
 func extractCN(dn string) string {
