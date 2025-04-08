@@ -30,6 +30,10 @@ func GetConnectionManager(config *ConnConfig) *Manager {
 		connStats: make(map[string]int),
 	}
 
+	if err := manager.CheckHealth(); err != nil {
+		fmt.Println("Initial health check failed")
+	}
+
 	return manager
 }
 
@@ -43,7 +47,6 @@ func (m *Manager) CheckHealth() error {
 
 	defer m.pool.Release(pooledConn)
 
-	// with anonymous user
 	if err := pooledConn.conn.UnauthenticatedBind(""); err != nil {
 		m.isHealthy = false
 		m.updateStats("health_check_failed", 1)

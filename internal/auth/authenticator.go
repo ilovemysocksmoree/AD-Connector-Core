@@ -115,19 +115,45 @@ func (a *Authenticator) getCache(k cacheKey) (interface{}, bool) {
 	return v.value, true
 }
 
-func (a *Authenticator) Authenticate(username, password string) (*Session, error) {
-	return nil, nil
+func (a *Authenticator) Authenticate(logonName, password, username string) (*Session, error) {
+	fmt.Printf("Authenticating user: %s \n\n", logonName)
+
+	if logonName == "" || password == "" {
+		return nil, fmt.Errorf("username or password is empty")
+	}
+
+	userInfo, err := a.GetUserInfo(username, logonName, password)
+	if err != nil {
+		return nil, err
+	}
+
+	conn, err := a.connManager.GetConnection(userInfo.DN, password)
+	if err != nil {
+		return nil, err
+	}
+
+	a.connManager.ReleaseConnection(conn)
+	sessionManager := a.sm.CreateSession(userInfo.Username, userInfo.DN)
+	for _, groupDN := range userInfo.Groups {
+		if cn := extractCN(groupDN); cn != "" {
+			permission := fmt.Sprintf("group:%s", cn)
+			sessionManager.AddPermission(permission)
+		}
+	}
+
+	sessionManager.SetMetadata("displayName", userInfo.DisplayName)
+	sessionManager.SetMetadata("email", userInfo.Email)
+	sessionManager.SetMetadata("UPN", userInfo.UPN)
+
+	return sessionManager, nil
 }
 
 func (a *Authenticator) GetUserInfo(username, bindUser, bindPassword string) (*types.UserInfo, error) {
-	fmt.Println("Getting user information")
-
 	key := cacheKey{
 		username: username,
 		action:   "userInfo",
 	}
 	if cachedUser, ok := a.getCache(key); ok {
-		fmt.Println("user found in cache")
 		return cachedUser.(*types.UserInfo), nil
 	}
 
@@ -169,7 +195,6 @@ func (a *Authenticator) GetUserInfo(username, bindUser, bindPassword string) (*t
 	}
 
 	a.setCache(key, userInfo)
-	fmt.Println("user has been added to cache")
 	return userInfo, nil
 }
 
