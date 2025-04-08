@@ -7,7 +7,7 @@ type UserInfo struct {
 	Email       string
 	UPN         string
 	Groups      []string
-	Attributes  map[string]string
+	Attributes  map[string][]string
 }
 
 type GroupInfo struct {
@@ -15,5 +15,5 @@ type GroupInfo struct {
 	Name        string
 	Description string
 	Members     []string
-	Attributes  map[string]string
+	Attributes  map[string][]string
 }
