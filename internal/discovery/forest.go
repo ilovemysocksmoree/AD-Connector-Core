@@ -206,6 +206,41 @@ func (fd *ForestDiscovery) discoverSchemaVersion(
 	username, password, configDN string,
 	forestInfo *ForestInfo,
 ) error {
+	searchReq := ldap.NewSearchRequest(
+		"",
+		ldap.ScopeBaseObject, ldap.NeverDerefAliases, 0, 0, false,
+		"(objectClass=*)",
+		[]string{"schemaNamingContext"},
+		nil,
+	)
+
+	resp, err := fd.connManager.Search(username, password, searchReq)
+	if err != nil {
+		return err
+	}
+
+	schemaCTX := resp.Entries[0].GetAttributeValue("schemaNamingContext")
+	if schemaCTX == "" {
+		return fmt.Errorf("schemaNamingContext is empty, so discarding schema version detection")
+	}
+
+	versionReq := ldap.NewSearchRequest(
+		schemaCTX,
+		ldap.ScopeBaseObject, ldap.NeverDerefAliases, 0, 0, false,
+		"(objectClass=*)",
+		[]string{"objectVersion"},
+		nil,
+	)
+
+	versionResp, err := fd.connManager.Search(username, password, versionReq)
+	if err != nil {
+		return err
+	}
+
+	objVersion := versionResp.Entries[0].GetAttributeValue("objectVersion")
+	forestInfo.SchemaVersion = objVersion
+
+	fmt.Printf("Schema version: %s \n", objVersion)
 	return nil
 }
 
