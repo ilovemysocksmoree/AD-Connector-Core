@@ -33,6 +33,8 @@ func main() {
 		os.Exit(1)
 	}
 
+	// forestDiscovery := discovery.NewForestDiscovery(cm)
+	// forestDiscovery.DiscoverForest(userlogon, password, baseDN)
 	authConfig := auth.NewAuthDefaultConfig(baseDN)
 	authenticator, err := auth.NewAuthenticator(cm, authConfig)
 	if err != nil {

@@ -40,6 +40,46 @@ func NewForestDiscovery(conn *connection.Manager) *ForestDiscovery {
 	}
 }
 
+func (fd *ForestDiscovery) DiscoverForest(username, password, dm string) (*ForestInfo, error) {
+	cacheKey := fmt.Sprintf("%s-%s", username, dm)
+	if docs := fd.getCache(cacheKey); docs != nil {
+		fmt.Println("Found forest information in cache")
+		return docs, nil
+	}
+
+	domainComponent := extractDomainComponent(dm)
+	if domainComponent == "" {
+		return nil, fmt.Errorf("invalid configuration DN format")
+	}
+
+	forestInfo := &ForestInfo{
+		ExtraAttributes: make(map[string][]string),
+	}
+
+	if err := fd.discoverRootDomain(username, password, dm, forestInfo); err != nil {
+		return nil, err
+	}
+
+	if err := fd.discoverForestConfig(username, password, dm, forestInfo); err != nil {
+		fmt.Println("unable to discover forest configuration")
+	}
+
+	if err := fd.discoverGlobalCatalog(username, password, dm, forestInfo); err != nil {
+		fmt.Println("unable to discover global catalog")
+	}
+
+	if err := fd.discoverSites(username, password, dm, forestInfo); err != nil {
+		fmt.Println("unable to discover new sites for forest")
+	}
+
+	if err := fd.discoverSchemaVersion(username, password, dm, forestInfo); err != nil {
+		fmt.Println("unable to discover schema version for forest")
+	}
+
+	fd.setCache(cacheKey, forestInfo)
+	return forestInfo, nil
+}
+
 func (fd *ForestDiscovery) discoverRootDomain(
 	bindUser, bindPwd, configDN string,
 	forestInfo *ForestInfo,
