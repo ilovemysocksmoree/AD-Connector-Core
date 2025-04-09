@@ -52,7 +52,7 @@ func main() {
 	fmt.Printf("Authentication successful, session-id: %s \n", session.ID)
 	fmt.Printf("Session will expires at: %s \n", session.ExpiresAt.Format(time.RFC3339))
 
-	userInfo, err := authenticator.GetUserInfo("username", userlogon, password)
+	userInfo, err := authenticator.GetUserInfo("ayid.admin2", authConfig.BindUser, authConfig.BindPwd)
 	if err != nil {
 		fmt.Printf("error while getting user info: %v \n", err)
 	} else {

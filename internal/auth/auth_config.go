@@ -4,6 +4,8 @@ import "time"
 
 type AuthConfig struct {
 	BaseDN          string
+	BindUser        string
+	BindPwd         string
 	UserFilter      string
 	GroupFilter     string
 	SessionTTL      time.Duration
@@ -16,6 +18,8 @@ type AuthConfig struct {
 func NewAuthDefaultConfig(baseDN string) *AuthConfig {
 	return &AuthConfig{
 		BaseDN:          baseDN,
+		BindUser:        "Administrator@adscanner.local",
+		BindPwd:         "admin@123",
 		UserFilter:      "(&(objectClass=user)(objectCategory=person)(sAMAccountName=%s))",
 		GroupFilter:     "(&(objectClass=group)(member=%s))",
 		SessionTTL:      1 * time.Hour,
