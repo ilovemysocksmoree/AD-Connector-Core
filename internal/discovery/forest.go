@@ -348,6 +348,10 @@ func extractDomainComponent(v string) string {
 }
 
 func extractDomainNameFromDN(v string) string {
+	if len(v) < 1 {
+		return v
+	}
+
 	parts := strings.Split(v, ",")
 	var domainParts []string
 
