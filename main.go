@@ -7,6 +7,7 @@ import (
 
 	"github.com/ilovemysocksmoree/adcore/internal/auth"
 	"github.com/ilovemysocksmoree/adcore/internal/connection"
+	"github.com/ilovemysocksmoree/adcore/internal/objects"
 )
 
 func main() {
@@ -33,16 +34,13 @@ func main() {
 		os.Exit(1)
 	}
 
-	// forestDiscovery := discovery.NewForestDiscovery(cm)
-	// forestDiscovery.DiscoverForest(userlogon, password, baseDN)
 	authConfig := auth.NewAuthDefaultConfig(baseDN)
 	authenticator, err := auth.NewAuthenticator(cm, authConfig)
 	if err != nil {
-		fmt.Println("unable to get authenticator's instance")
+		fmt.Println("unable to get instance of authenticator")
 		os.Exit(1)
 		return
 	}
-	defer authenticator.Close()
 
 	session, err := authenticator.Authenticate(userlogon, password, username)
 	if err != nil {
@@ -54,27 +52,76 @@ func main() {
 	fmt.Printf("Authentication successful, session-id: %s \n", session.ID)
 	fmt.Printf("Session will expires at: %s \n", session.ExpiresAt.Format(time.RFC3339))
 
-	userInfo, err := authenticator.GetUserInfo("ayid.admin2", authConfig.BindUser, authConfig.BindPwd)
+	um := objects.NewUserManager(cm, baseDN)
+
+	// test_user := "ayid.admin1"
+	// user, err := um.GetUserBySAMAccountName(test_user, authConfig.BindUser, authConfig.BindPwd)
+	// if err != nil {
+	// 	fmt.Printf("unable to find user with given username: %s | err: %v \n", test_user, err)
+	// }
+
+	// users, _ := um.GetAllUsers(authConfig.BindUser, authConfig.BindPwd, nil, []string{})
+	// for _, user := range users {
+	// 	fmt.Println(user)
+	// }
+
+	user1 := &objects.User{
+		SAMAccountName:    "ssh",
+		DistinguishedName: "CN=John,DC=ads,DC=adscanner,DC=local",
+		UserPrincipalName: "jdoe@adscanner.local",
+		DisplayName:       "John Doe",
+		GivenName:         "John",
+		SurName:           "Doe",
+		Description:       "Software Engineer",
+		Title:             "Senior Developer",
+		Department:        "Engineering",
+		Company:           "Example Corp",
+		TelephoneNumber:   "+1-555-123-4567",
+		Mobile:            "+1-555-987-6543",
+		// Optional fields left as zero values or empty
+		Memberof:      []string{},
+		RawAttributes: make(map[string][]string),
+		WhenCreated:   time.Time{},
+		WhenChanged:   time.Time{},
+	}
+
+	err = um.CreateUser(user1, "Admin@123!", authConfig.BindUser, authConfig.BindPwd)
 	if err != nil {
-		fmt.Printf("error while getting user info: %v \n", err)
-	} else {
-		fmt.Println("============================================")
-		fmt.Printf("Display name: %s \n", userInfo.DisplayName)
-		fmt.Printf("Username: %s \n", userInfo.Username)
-		fmt.Printf("Email: %s \n", userInfo.Email)
-		fmt.Printf("Members of group: %d \n", len(userInfo.Groups))
-
-		fmt.Println("GROUPPP")
-		for _, grp := range userInfo.Groups {
-			fmt.Println(grp)
-		}
-		fmt.Println("GROUPPP")
-		fmt.Println("============================================")
+		fmt.Printf("error while creating user: %v \n", err)
 	}
 
-	connStats := cm.GetStats()
-	fmt.Println("Connection Stats")
-	for k, v := range connStats {
-		fmt.Printf("[%s]:> %s \n", k, v)
-	}
+	fmt.Println("User created successfully")
+	// forestDiscovery := discovery.NewForestDiscovery(cm)
+	// forestDiscovery.DiscoverForest(userlogon, password, baseDN)
+
+	// if err != nil {
+	// 	fmt.Println("unable to get authenticator's instance")
+	// 	os.Exit(1)
+	// 	return
+	// }
+	// defer authenticator.Close()
+
+	// userInfo, err := authenticator.GetUserInfo("ayid.admin2", authConfig.BindUser, authConfig.BindPwd)
+	// if err != nil {
+	// 	fmt.Printf("error while getting user info: %v \n", err)
+	// } else {
+	// 	fmt.Println("============================================")
+	// 	fmt.Printf("Display name: %s \n", userInfo.DisplayName)
+	// 	fmt.Printf("Username: %s \n", userInfo.Username)
+	// 	fmt.Printf("Email: %s \n", userInfo.Email)
+	// 	fmt.Printf("Members of group: %d \n", len(userInfo.Groups))
+
+	// 	fmt.Println("GROUPPP")
+	// 	for _, grp := range userInfo.Groups {
+	// 		fmt.Println(grp)
+	// 	}
+	// 	fmt.Println("GROUPPP")
+	// 	fmt.Println("============================================")
+	// }
+
+	// connStats := cm.GetStats()
+	// fmt.Println("Connection Stats")
+	// for k, v := range connStats {
+	// 	fmt.Printf("[%s]:> %s \n", k, v)
+	// }
 }

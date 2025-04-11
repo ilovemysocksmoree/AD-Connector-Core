@@ -109,6 +109,51 @@ func NewUserManager(conn *connection.Manager, baseDN string) *UserManager {
 	}
 }
 
+// fetch all user object ad-forest
+func (um *UserManager) GetAllUsers(bindUser, bindPassword string, page *int, attr []string) ([]*User, error) {
+	p := 10
+	if page != nil {
+		p = *page
+	}
+
+	fmt.Println(p)
+
+	if len(attr) == 0 {
+		attr = defaultUserAttr()
+	}
+
+	req := ldap.NewSearchRequest(
+		um.baseDN,
+		ldap.ScopeWholeSubtree, ldap.NeverDerefAliases, 0, 0, false,
+		"(&(objectClass=user)(objectCategory=person))",
+		attr,
+		nil,
+	)
+
+	resp, err := um.conn.Search(bindUser, bindPassword, req)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(resp.Entries) == 0 {
+		return nil, fmt.Errorf("entry is empty while getting all users")
+	}
+
+	var users []*User
+	for _, ent := range resp.Entries {
+		user := um.entryToUser(ent)
+		if user != nil {
+			users = append(users, user)
+		}
+	}
+
+	if len(users) == 0 {
+		fmt.Printf("users not found for domain: %s \n", um.baseDN)
+	}
+
+	return users, nil
+}
+
 func (um *UserManager) GetUserBySAMAccountName(username, bindUser, bindPassword string) (*User, error) {
 	searchFilter := fmt.Sprintf("(&(objectClass=user)(objectCategory=person)(sAMAccountName=%s))", ldap.EscapeFilter(username))
 	req := ldap.NewSearchRequest(
@@ -124,6 +169,7 @@ func (um *UserManager) GetUserBySAMAccountName(username, bindUser, bindPassword 
 		return nil, err
 	}
 
+	fmt.Println(resp)
 	if len(resp.Entries) == 0 {
 		return nil, fmt.Errorf("search response entry is zero")
 	}
@@ -195,6 +241,128 @@ func (um *UserManager) FindUsers(filter, bindUser, bindPassword string, attr []s
 	}
 
 	return parseUser, nil
+}
+
+func (um *UserManager) CreateUser(user *User, password, bindUser, bindPassword string) error {
+	fmt.Println("Adding user:")
+	fmt.Println(user)
+
+	if user.SAMAccountName == "" {
+		return fmt.Errorf("this is required field, please add SAMAccountName")
+	}
+
+	if user.DistinguishedName == "" {
+		return fmt.Errorf("this is required field, please add unique name")
+	}
+
+	attrs := []ldap.Attribute{
+		{Type: "objectClass", Vals: []string{"top", "person", "organizationalPerson", "user"}},
+		{Type: "sAMAccountName", Vals: []string{user.SAMAccountName}},
+	}
+
+	if user.UserPrincipalName != "" {
+		attrs = append(attrs, ldap.Attribute{Type: "userPrincipalName", Vals: []string{user.UserPrincipalName}})
+	}
+	if user.DisplayName != "" {
+		attrs = append(attrs, ldap.Attribute{Type: "displayName", Vals: []string{user.DisplayName}})
+	}
+	if user.GivenName != "" {
+		attrs = append(attrs, ldap.Attribute{Type: "givenName", Vals: []string{user.GivenName}})
+	}
+	if user.SurName != "" {
+		attrs = append(attrs, ldap.Attribute{Type: "sn", Vals: []string{user.SurName}})
+	}
+	if user.Mail != "" {
+		attrs = append(attrs, ldap.Attribute{Type: "mail", Vals: []string{user.Mail}})
+	}
+	if user.Description != "" {
+		attrs = append(attrs, ldap.Attribute{Type: "description", Vals: []string{user.Description}})
+	}
+	if user.Title != "" {
+		attrs = append(attrs, ldap.Attribute{Type: "title", Vals: []string{user.Title}})
+	}
+	if user.Department != "" {
+		attrs = append(attrs, ldap.Attribute{Type: "department", Vals: []string{user.Department}})
+	}
+	if user.Company != "" {
+		attrs = append(attrs, ldap.Attribute{Type: "company", Vals: []string{user.Company}})
+	}
+	if user.TelephoneNumber != "" {
+		attrs = append(attrs, ldap.Attribute{Type: "telephoneNumber", Vals: []string{user.TelephoneNumber}})
+	}
+	if user.Mobile != "" {
+		attrs = append(attrs, ldap.Attribute{Type: "mobile", Vals: []string{user.Mobile}})
+	}
+
+	intialUAC := uint32(UAC_NORMAL_ACCOUNT | UAC_ACCOUNTDISABLE | UAC_PASSWD_NOTREQD)
+	attrs = append(attrs, ldap.Attribute{
+		Type: "userAccountControl",
+		Vals: []string{fmt.Sprintf("%d", intialUAC)},
+	})
+
+	req := ldap.NewAddRequest(user.DistinguishedName, nil)
+	req.Attributes = attrs
+
+	conn, err := um.conn.GetConnection(bindUser, bindPassword)
+	if err != nil {
+		return err
+	}
+	defer um.conn.ReleaseConnection(conn)
+
+	resp := conn.Add(req)
+	if resp != nil {
+		return fmt.Errorf("unable to create new user: %v", resp)
+	}
+
+	if password != "" {
+		if err := um.SetPassword(user.DistinguishedName, password, bindUser, bindPassword); err != nil {
+			fmt.Println("unable to change password")
+			return err
+		}
+
+		newModifyReq := ldap.NewModifyRequest(user.DistinguishedName, nil)
+		enabledUAC := uint32(UAC_NORMAL_ACCOUNT)
+		newModifyReq.Replace("userAccountControl", []string{fmt.Sprintf("%d", enabledUAC)})
+
+		if err := conn.Modify(newModifyReq); err != nil {
+			return fmt.Errorf("user created with password but failed to enabled about: %w", err)
+		}
+	}
+
+	fmt.Printf("User created successfully \n")
+	return nil
+}
+
+func (um *UserManager) DeleteUser(dn, bindUser, bindPassword string) error {
+	req := ldap.NewDelRequest(dn, nil)
+
+	resp := um.conn.Delete(bindUser, bindPassword, req)
+	if resp != nil {
+		return fmt.Errorf("[DELETE:USER] > %v", resp)
+	}
+
+	return nil
+}
+
+func (um *UserManager) SetPassword(dn, password, bindUser, bindPassword string) error {
+	conn, err := um.conn.GetConnection(bindUser, bindPassword)
+	if err != nil {
+		return err
+	}
+	defer um.conn.ReleaseConnection(conn)
+
+	quotoPwd := fmt.Sprintf("\"%s\"", password)
+	encodedPwd := utf16LittleEndianEncode(quotoPwd)
+
+	mod := ldap.NewModifyRequest(dn, nil)
+	mod.Replace("unicodePwd", []string{encodedPwd})
+
+	if err := conn.Modify(mod); err != nil {
+		fmt.Println("error while modifying password")
+		return err
+	}
+
+	return nil
 }
 
 func (um *UserManager) entryToUser(u *ldap.Entry) *User {
@@ -278,9 +446,20 @@ func (um *UserManager) entryToUser(u *ldap.Entry) *User {
 	return user
 }
 
-func (um *UserManager) setBaseDN(baseDN string) {
-	um.baseDN = baseDN
+func utf16LittleEndianEncode(s string) string {
+	runes := []rune(s)
+	utf16bytes := make([]byte, len(runes)*2)
+
+	for i, r := range runes {
+		utf16bytes[i*2] = byte(r)
+		utf16bytes[i*2+1] = byte(r >> 8)
+	}
+	return string(utf16bytes)
 }
+
+// func (um *UserManager) setBaseDN(baseDN string) {
+// 	um.baseDN = baseDN
+// }
 
 func defaultUserAttr() []string {
 	return []string{
