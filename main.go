@@ -52,8 +52,53 @@ func main() {
 	fmt.Printf("Authentication successful, session-id: %s \n", session.ID)
 	fmt.Printf("Session will expires at: %s \n", session.ExpiresAt.Format(time.RFC3339))
 
-	um := objects.NewUserManager(cm, baseDN)
+	ou := objects.NewOUManager(cm, baseDN)
+	ous, err := ou.GetAllOUs(authConfig.BindUser, authConfig.BindPwd, nil, []string{})
+	if err != nil {
+		fmt.Println("error while getting all OUs")
+	}
 
+	for _, oui := range ous {
+		fmt.Println(oui)
+	}
+	// ou1 := &objects.OU{
+	// 	Name:              "Sales",
+	// 	DistinguishedName: "OU=Sales,DC=adscanner,DC=local",
+	// 	Description:       "Organizational Unit for Sales Department",
+	// 	RawAttributes:     make(map[string][]string),
+	// }
+
+	// ou2 := &objects.OU{
+	// 	Name:              "Engineering-Team",
+	// 	DistinguishedName: "OU=Engineering,OU=ADS,DC=adscanner,DC=local",
+	// 	Description:       "Organizational Unit for Engineering Department",
+	// 	RawAttributes:     make(map[string][]string),
+	// }
+
+	// if err := ou.CreateOU(ou2, authConfig.BindUser, authConfig.BindPwd); err != nil {
+	// 	fmt.Println(err, "while creeating ou")
+	// }
+
+	// om := objects.NewGroupManager(cm, baseDN)
+	// CN=ADSManagers,OU=ADS,DC=adscanner,DC=local
+	// group1 := &objects.Group{
+	// 	SAMAccountName:    "Bobthebuider",
+	// 	DistinguishedName: "CN=Builders,OU=Engineering,OU=ADS,DC=adscanner,DC=local",
+	// 	Name:              "Security Analyst Team",
+	// 	DisplayName:       "Security Analyst Team",
+	// 	Description:       "Group for security analysts",
+	// 	Type:              objects.GroupTypeGlobal | objects.GroupTypeSecurity,
+	// 	Email:             "secanalyst@adscanner.local",
+	// 	Members:           []string{},
+	// 	MemberOf:          []string{},
+	// 	RawAttributes:     make(map[string][]string),
+	// }
+
+	// if err := om.CreateGroup(group1, authConfig.BindUser, authConfig.BindPwd); err != nil {
+	// 	fmt.Println("error while creating new group", err)
+	// }
+
+	um := objects.NewUserManager(cm, baseDN)
 	// test_user := "ayid.admin1"
 	// user, err := um.GetUserBySAMAccountName(test_user, authConfig.BindUser, authConfig.BindPwd)
 	// if err != nil {
@@ -66,8 +111,8 @@ func main() {
 	// }
 
 	user1 := &objects.User{
-		SAMAccountName:    "ssh",
-		DistinguishedName: "CN=John,DC=ads,DC=adscanner,DC=local",
+		SAMAccountName:    "sshereerr",
+		DistinguishedName: "CN=bob,OU=Engineering,OU=ADS,DC=adscanner,DC=local",
 		UserPrincipalName: "jdoe@adscanner.local",
 		DisplayName:       "John Doe",
 		GivenName:         "John",
@@ -78,11 +123,10 @@ func main() {
 		Company:           "Example Corp",
 		TelephoneNumber:   "+1-555-123-4567",
 		Mobile:            "+1-555-987-6543",
-		// Optional fields left as zero values or empty
-		Memberof:      []string{},
-		RawAttributes: make(map[string][]string),
-		WhenCreated:   time.Time{},
-		WhenChanged:   time.Time{},
+		Memberof:          []string{},
+		RawAttributes:     make(map[string][]string),
+		WhenCreated:       time.Time{},
+		WhenChanged:       time.Time{},
 	}
 
 	err = um.CreateUser(user1, "Admin@123!", authConfig.BindUser, authConfig.BindPwd)
@@ -91,6 +135,7 @@ func main() {
 	}
 
 	fmt.Println("User created successfully")
+
 	// forestDiscovery := discovery.NewForestDiscovery(cm)
 	// forestDiscovery.DiscoverForest(userlogon, password, baseDN)
 
