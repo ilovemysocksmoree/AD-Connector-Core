@@ -31,6 +31,7 @@ func GetConnectionManager(config *ConnConfig) *Manager {
 	}
 
 	if err := manager.CheckHealth(); err != nil {
+		fmt.Println(err)
 		fmt.Println("Initial health check failed")
 	}
 

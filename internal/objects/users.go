@@ -246,6 +246,7 @@ func (um *UserManager) FindUsers(filter, bindUser, bindPassword string, attr []s
 func (um *UserManager) CreateUser(user *User, password, bindUser, bindPassword string) error {
 	fmt.Println("Adding user:")
 	fmt.Println(user)
+	fmt.Println(user.DistinguishedName)
 
 	if user.SAMAccountName == "" {
 		return fmt.Errorf("this is required field, please add SAMAccountName")
@@ -294,7 +295,7 @@ func (um *UserManager) CreateUser(user *User, password, bindUser, bindPassword s
 		attrs = append(attrs, ldap.Attribute{Type: "mobile", Vals: []string{user.Mobile}})
 	}
 
-	intialUAC := uint32(UAC_NORMAL_ACCOUNT | UAC_ACCOUNTDISABLE | UAC_PASSWD_NOTREQD)
+	intialUAC := uint32(UAC_NORMAL_ACCOUNT | UAC_ACCOUNTDISABLE)
 	attrs = append(attrs, ldap.Attribute{
 		Type: "userAccountControl",
 		Vals: []string{fmt.Sprintf("%d", intialUAC)},
@@ -309,23 +310,21 @@ func (um *UserManager) CreateUser(user *User, password, bindUser, bindPassword s
 	}
 	defer um.conn.ReleaseConnection(conn)
 
-	resp := conn.Add(req)
-	if resp != nil {
+	if resp := conn.Add(req); resp != nil {
 		return fmt.Errorf("unable to create new user: %v", resp)
+	}
+
+	if err := um.EnableUser(user.DistinguishedName, bindUser, bindPassword); err != nil {
+		return fmt.Errorf("unable to enable user to set password: %v", err)
 	}
 
 	if password != "" {
 		if err := um.SetPassword(user.DistinguishedName, password, bindUser, bindPassword); err != nil {
-			fmt.Println("unable to change password")
+			fmt.Println("Please set the password manually in Server Manager or PowerShell:")
+			fmt.Printf(`PowerShell:Set-ADAccountPassword -Identity "%s" -NewPassword (ConvertTo-SecureString "%s" -AsPlainText -Force)`, user.DistinguishedName, password)
 			return err
-		}
-
-		newModifyReq := ldap.NewModifyRequest(user.DistinguishedName, nil)
-		enabledUAC := uint32(UAC_NORMAL_ACCOUNT)
-		newModifyReq.Replace("userAccountControl", []string{fmt.Sprintf("%d", enabledUAC)})
-
-		if err := conn.Modify(newModifyReq); err != nil {
-			return fmt.Errorf("user created with password but failed to enabled about: %w", err)
+		} else {
+			fmt.Println("Password created successfully")
 		}
 	}
 
@@ -344,6 +343,43 @@ func (um *UserManager) DeleteUser(dn, bindUser, bindPassword string) error {
 	return nil
 }
 
+func (um *UserManager) EnableUser(dn, bindUser, bindPassword string) error {
+	user, err := um.GetUserByDN(dn, bindUser, bindPassword)
+	if err != nil {
+		return err
+	}
+
+	newUAC := user.UserAccountControl &^ uint32(UAC_ACCOUNTDISABLE)
+	modReq := ldap.NewModifyRequest(dn, nil)
+	modReq.Replace("userAccountControl", []string{fmt.Sprintf("%d", newUAC)})
+
+	if err := um.conn.Modify(bindUser, bindPassword, modReq); err != nil {
+		return err
+	}
+
+	fmt.Println("User modified successfully")
+	return nil
+}
+
+func (um *UserManager) DisableUser(dn, bindUsername, bindPassword string) error {
+	user, err := um.GetUserByDN(dn, bindUsername, bindPassword)
+	if err != nil {
+		return fmt.Errorf("failed to get user for disable operation: %v", err)
+	}
+
+	newUAC := user.UserAccountControl | uint32(UAC_ACCOUNTDISABLE)
+
+	modifyRequest := ldap.NewModifyRequest(dn, nil)
+	modifyRequest.Replace("userAccountControl", []string{fmt.Sprintf("%d", newUAC)})
+
+	if err := um.conn.Modify(bindUsername, bindPassword, modifyRequest); err != nil {
+		return err
+	}
+
+	fmt.Println("Successfully disabled user account")
+	return nil
+}
+
 func (um *UserManager) SetPassword(dn, password, bindUser, bindPassword string) error {
 	conn, err := um.conn.GetConnection(bindUser, bindPassword)
 	if err != nil {
@@ -358,11 +394,56 @@ func (um *UserManager) SetPassword(dn, password, bindUser, bindPassword string) 
 	mod.Replace("unicodePwd", []string{encodedPwd})
 
 	if err := conn.Modify(mod); err != nil {
-		fmt.Println("error while modifying password")
+		fmt.Println("error while modifying password", err)
 		return err
 	}
 
 	return nil
+}
+
+func (um *UserManager) IsAccountEnabled(dn, bindUsername, bindPassword string) (bool, error) {
+	user, err := um.GetUserByDN(dn, bindUsername, bindPassword)
+	if err != nil {
+		return false, err
+	}
+
+	isEnabled := (user.UserAccountControl & uint32(UAC_ACCOUNTDISABLE)) == 0
+
+	fmt.Printf("Account enabled status: %v \n", isEnabled)
+	return isEnabled, nil
+}
+
+func (um *UserManager) IsPasswordExpired(dn, bindUsername, bindPassword string) (bool, error) {
+	user, err := um.GetUserByDN(dn, bindUsername, bindPassword)
+	if err != nil {
+		return false, err
+	}
+
+	neverExpires := (user.UserAccountControl & uint32(UAC_DONT_EXPIRE_PASSWORD)) != 0
+	if neverExpires {
+		return false, nil
+	}
+
+	isExpired := (user.UserAccountControl & uint32(UAC_PASSWORD_EXPIRED)) != 0
+
+	if user.PwdLastSet == 0 {
+		isExpired = true
+	}
+
+	fmt.Printf("Password expired status: %v \n", isExpired)
+	return isExpired, nil
+}
+
+func (um *UserManager) IsLocked(dn, bindUsername, bindPassword string) (bool, error) {
+	user, err := um.GetUserByDN(dn, bindUsername, bindPassword)
+	if err != nil {
+		return false, err
+	}
+
+	isLocked := (user.UserAccountControl & uint32(UAC_LOCKOUT)) != 0
+
+	fmt.Printf("Account locked status: %v \n", isLocked)
+	return isLocked, nil
 }
 
 func (um *UserManager) entryToUser(u *ldap.Entry) *User {

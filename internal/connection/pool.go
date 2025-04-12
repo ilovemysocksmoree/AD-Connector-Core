@@ -107,7 +107,7 @@ func (p *ConnectionPool) createNewConnection() (*PooledConnection, error) {
 		}
 
 		if p.config.UseSSL {
-			fmt.Println("ssl dial implementation incoming")
+			fmt.Println("ssl dial implementation incoming...")
 		} else {
 			conn, err = ldap.DialURL(p.config.ServerAddr)
 		}
